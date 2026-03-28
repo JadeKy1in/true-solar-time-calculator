@@ -17,6 +17,11 @@
         input[type="text"], input[type="date"], input[type="time"] { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: border-color 0.2s; }
         input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2); }
         
+        .radio-group { background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb; margin-top: 5px; }
+        .radio-item { display: flex; align-items: center; margin-bottom: 8px; font-weight: normal; font-size: 14px; color: #374151; cursor: pointer; }
+        .radio-item:last-child { margin-bottom: 0; }
+        .radio-item input { width: auto; margin-right: 8px; cursor: pointer; }
+
         button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s; margin-top: 10px; }
         button:hover { background: #047857; }
         button:disabled { background: #9ca3af; cursor: not-allowed; }
@@ -30,7 +35,7 @@
         .result-item .label-box { display: flex; flex-direction: column; }
         .result-item span.label { color: #4b5563; font-weight: 600; }
         .result-item span.label-en { color: #9ca3af; font-size: 12px; }
-        .result-item span.value { font-weight: 600; color: #111827; text-align: right; max-width: 50%; word-break: break-word; }
+        .result-item span.value { font-weight: 600; color: #111827; text-align: right; max-width: 55%; word-break: break-word; }
         
         .dst-alert { background: #fffbeb; color: #b45309; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; border: 1px solid #fde68a; display: none; line-height: 1.5; }
         .dst-alert strong { color: #d97706; display: block; margin-bottom: 4px; }
@@ -55,24 +60,32 @@
     </div>
     
     <div class="form-group">
-        <label>出生钟表时间 (当地时间) <span class="en-label">/ Birth Clock Time (Local Time)</span></label>
+        <label>出生时间 <span class="en-label">/ Birth Time</span></label>
         <input type="time" id="birthTime" required>
+        
+        <div class="radio-group">
+            <label class="radio-item">
+                <input type="radio" name="dstMode" value="auto" checked> 
+                这是当时的钟表显示时间 (系统自动计算夏令时)
+            </label>
+            <label class="radio-item">
+                <input type="radio" name="dstMode" value="manual"> 
+                我已自行扣除了夏令时偏差 (按标准时间算)
+            </label>
+        </div>
     </div>
 
     <div class="form-group">
-        <label>出生地点 (城市名、拼音 或 邮编) <span class="en-label">/ Birthplace (City name, Pinyin or ZIP)</span></label>
-        <input type="text" id="locationQuery" placeholder="例如: Beijing, 纽约, 或法国邮编 75001" required>
+        <label>出生地点 (城市名、拼音 或 邮编) <span class="en-label">/ Birthplace</span></label>
+        <input type="text" id="locationQuery" placeholder="例如: 长春市, 南关区, 或纽约" required>
+        <small style="color:#9ca3af; font-size:12px; margin-top:4px; display:block;">注：中国大陆请直接输入城市或区县名，暂不支持6位邮编直查。</small>
     </div>
 
     <button id="calcBtn" onclick="calculate()">计算天文真太阳时 / Calculate</button>
     <div id="loading">正在连接全球地理数据库查询... / Connecting to global database...</div>
 
     <div id="result" class="result-box">
-        <div id="dstAlert" class="dst-alert">
-            <strong>⚠️ 夏令时调整说明 / DST Adjustment Notice：</strong> 
-            经系统查询，该出生时刻当地正在实行夏令时。为保证计算精度，系统已自动<b>扣除了 1 小时</b>的夏令时偏差。
-            <br><span style="color:#92400e; font-size:12px;">The system detected DST was active. 1 hour has been automatically deducted for astronomical accuracy.</span>
-        </div>
+        <div id="dstAlert" class="dst-alert"></div>
 
         <div class="result-item">
             <div class="label-box"><span class="label">识别到的地点</span><span class="label-en">Recognized Location</span></div>
@@ -87,7 +100,7 @@
             <span class="value" id="resLng"></span>
         </div>
         <div class="result-item">
-            <div class="label-box"><span class="label">是否实行夏令时</span><span class="label-en">Is DST Active</span></div>
+            <div class="label-box"><span class="label">夏令时状态</span><span class="label-en">DST Status</span></div>
             <span class="value" id="resDst"></span>
         </div>
         <div class="result-item">
@@ -115,12 +128,13 @@
 
 <script>
     const DateTime = luxon.DateTime;
-    let rawResultData = {}; // 存储用于复制的纯文本数据
+    let rawResultData = {};
 
     async function calculate() {
         const dateStr = document.getElementById('birthDate').value;
         const timeStr = document.getElementById('birthTime').value;
         const locationStr = document.getElementById('locationQuery').value.trim();
+        const dstMode = document.querySelector('input[name="dstMode"]:checked').value;
 
         if(!dateStr || !timeStr || !locationStr) {
             alert("请完整填写所有信息 / Please fill in all fields!");
@@ -138,13 +152,18 @@
         dstAlert.style.display = 'none';
 
         try {
-            // 1. 调用 Open-Meteo API 获取经纬度与时区
+            // 1. API 查询
             const apiUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationStr)}&count=1&language=zh`;
             const response = await fetch(apiUrl);
             const geoData = await response.json();
 
+            // 智能拦截 6位邮编错误
             if (!geoData.results || geoData.results.length === 0) {
-                throw new Error("无法识别地点，请尝试拼音或大城市名 / Location not found, try Pinyin or major city.");
+                if (/^\d{6}$/.test(locationStr)) {
+                    throw new Error("全球地理数据库对中国6位邮编支持不完善。请直接输入城市或区县名（例如：长春市、南关区）。");
+                } else {
+                    throw new Error("无法识别该地点，请尝试输入拼音或更大的城市名。");
+                }
             }
 
             const locationInfo = geoData.results[0];
@@ -152,19 +171,46 @@
             const longitude = locationInfo.longitude;
             const displayName = `${locationInfo.name}${locationInfo.admin1 ? ', ' + locationInfo.admin1 : ''} (${locationInfo.country})`;
 
-            if (!timezone) throw new Error("缺乏时区数据，请尝试大城市 / Timezone missing, try a major city.");
+            if (!timezone) throw new Error("该地点缺乏时区数据，请尝试输入大城市。");
 
-            // 2. 构建出生当地时间
+            // 2. 构建出生时间
             const localDt = DateTime.fromISO(`${dateStr}T${timeStr}`, { zone: timezone });
-            if (!localDt.isValid) throw new Error("无效的日期或时间 / Invalid date or time");
+            if (!localDt.isValid) throw new Error("无效的日期或时间");
 
-            // 3. 转换 UTC
-            const utcDt = localDt.toUTC();
+            // 3. 核心修正：夏令时与 UTC 换算
+            let utcDt = localDt.toUTC();
+            let dstStatusText = "";
+            let alertHtml = "";
 
-            // 4. 计算 LMT
+            if (localDt.isInDST) {
+                if (dstMode === 'auto') {
+                    dstStatusText = "是 (系统已自动扣除偏差)";
+                    alertHtml = `<strong>⚠️ 夏令时生效中：</strong> 经系统查询，该出生时刻当地正在实行夏令时。为保证精度，系统已自动<b>扣除了 1 小时</b>的夏令时偏差。`;
+                    dstAlert.style.display = 'block';
+                } else {
+                    // 用户说已经扣除了，但系统发现还是夏令时。
+                    // 必须把 Luxon 多减去的那 1 小时夏令时偏移量加回来，才能还原正确的 UTC 标准时。
+                    utcDt = utcDt.plus({ hours: 1 }); 
+                    dstStatusText = "是 (用户已手动扣除，系统不再重复计算)";
+                    alertHtml = `<strong>💡 手动防重复调整成功：</strong> 经查询该时刻处于夏令时期间。由于您选择了“已自行扣除”，系统已停止重复扣减，强制按标准时间为您推算。`;
+                    dstAlert.style.display = 'block';
+                }
+            } else {
+                if (dstMode === 'manual') {
+                    dstStatusText = "否 (警告：该时段无夏令时，您的手动扣除可能导致误差)";
+                    alertHtml = `<strong>❌ 无效的手动调整：</strong> 经查询，该出生时刻当地<b>并未实行夏令时</b>。您输入的时间可能已经被错误地扣减了1小时，请核实！`;
+                    dstAlert.style.display = 'block';
+                } else {
+                    dstStatusText = "否 (处于标准时间)";
+                }
+            }
+            
+            dstAlert.innerHTML = alertHtml;
+
+            // 4. 计算平太阳时 LMT
             const lmtDt = utcDt.plus({ minutes: longitude * 4 });
 
-            // 5. 计算 EoT (Spencer 1971)
+            // 5. 计算天文均时差 EoT
             const d = localDt.ordinal;
             const gamma = (2 * Math.PI / 365) * (d - 1);
             const eot = 229.18 * (0.000075 
@@ -173,35 +219,33 @@
                         - 0.014615 * Math.cos(2 * gamma) 
                         - 0.040849 * Math.sin(2 * gamma));
 
-            // 6. 得出 TST
+            // 6. 得出真太阳时 TST
             const tstDt = lmtDt.plus({ minutes: eot });
 
-            // 7. 渲染到界面并保存纯文本数据
-            const dstStatus = localDt.isInDST ? "是 / Yes (已扣除/Deducted)" : "否 / No";
+            // 7. 渲染结果
             const eotStr = `${eot > 0 ? '+' : ''}${eot.toFixed(2)} 分钟(mins)`;
 
             document.getElementById('resLocation').innerText = displayName;
             document.getElementById('resTz').innerText = timezone;
             document.getElementById('resLng').innerText = longitude.toFixed(4) + "°";
-            document.getElementById('resDst').innerHTML = localDt.isInDST ? `<span style="color:#b45309;">${dstStatus}</span>` : dstStatus;
+            document.getElementById('resDst').innerHTML = `<span style="${localDt.isInDST || dstMode === 'manual' ? 'color:#b45309;' : ''}">${dstStatusText}</span>`;
             document.getElementById('resUtc').innerText = utcDt.toFormat("yyyy-MM-dd HH:mm:ss");
             document.getElementById('resLmt').innerText = lmtDt.toFormat("yyyy-MM-dd HH:mm:ss");
             document.getElementById('resEot').innerText = eotStr;
             document.getElementById('resTst').innerText = tstDt.toFormat("yyyy-MM-dd HH:mm:ss");
 
-            if (localDt.isInDST) dstAlert.style.display = 'block';
             resultBox.style.display = 'block';
 
-            // 构建复制用的排版文本
+            // 构建复制用文本
             rawResultData = {
                 loc: displayName, tz: timezone, lng: longitude.toFixed(4) + "°",
-                dst: dstStatus, utc: utcDt.toFormat("yyyy-MM-dd HH:mm:ss"),
+                dst: dstStatusText, utc: utcDt.toFormat("yyyy-MM-dd HH:mm:ss"),
                 lmt: lmtDt.toFormat("yyyy-MM-dd HH:mm:ss"), eot: eotStr,
                 tst: tstDt.toFormat("yyyy-MM-dd HH:mm:ss")
             };
 
         } catch (error) {
-            alert("计算失败 / Error: " + error.message);
+            alert("计算出错 / Error: " + error.message);
         } finally {
             btn.disabled = false;
             loading.style.display = 'none';
@@ -216,7 +260,7 @@
 📍 地点 / Location: ${rawResultData.loc}
 🌐 时区 / Timezone: ${rawResultData.tz}
 🗺️ 经度 / Longitude: ${rawResultData.lng}
-⏰ 夏令时 / DST Active: ${rawResultData.dst}
+⏰ 夏令时 / DST: ${rawResultData.dst}
 🌍 标准时间 / UTC: ${rawResultData.utc}
 ⏳ 平太阳时 / LMT: ${rawResultData.lmt}
 ⚖️ 均时差 / EoT: ${rawResultData.eot}
@@ -227,14 +271,14 @@
             const copyBtn = document.getElementById('copyBtn');
             const originalText = copyBtn.innerText;
             copyBtn.innerText = "✅ 已复制 / Copied Successfully!";
-            copyBtn.style.backgroundColor = "#059669"; // 变成绿色
+            copyBtn.style.backgroundColor = "#059669";
             
             setTimeout(() => {
                 copyBtn.innerText = originalText;
-                copyBtn.style.backgroundColor = ""; // 恢复原色
+                copyBtn.style.backgroundColor = "";
             }, 2000);
         }).catch(err => {
-            alert("复制失败，请手动选择复制 / Copy failed: " + err);
+            alert("复制失败 / Copy failed: " + err);
         });
     }
 </script>

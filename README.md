@@ -15,8 +15,7 @@ A lightweight, purely frontend web application to calculate True Solar Time (TST
 - **1-Click Share (一键复制分享)**: Formats complex calculation results into a clean, readable text block for easy sharing on mobile devices. / 针对移动端优化，一键将复杂的排盘数据格式化为美观的文本并存入剪贴板。
 
 ## 🚀 Demo / 在线体验
-[Click here to use the calculator](https://[你的GitHub用户名].github.io/[你的仓库名]/) 
-*(Note: Please replace the link with your actual GitHub Pages URL / 请将此链接替换为你真实的网页链接)*
+[Click here to use the calculator](https://jadeky1in.github.io/true-solar-time-calculator/) 
 
 ## 🛠️ Tech Stack / 技术栈
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript

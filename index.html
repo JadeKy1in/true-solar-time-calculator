@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球真太阳时计算器 | Global True Solar Time Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
+    <style>
+        :root { --primary: #059669; --bg: #ecfdf5; --text: #1f2937; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: var(--text); }
+        .container { max-width: 700px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: var(--primary); font-size: 24px; margin-bottom: 5px; line-height: 1.4; }
+        .subtitle { text-align: center; color: #6b7280; font-size: 14px; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px; color: #4b5563; }
+        .en-label { font-size: 12px; color: #9ca3af; font-weight: normal; margin-left: 5px; }
+        input[type="text"], input[type="date"], input[type="time"] { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: border-color 0.2s; }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2); }
+        
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s; margin-top: 10px; }
+        button:hover { background: #047857; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        
+        .btn-copy { background: #4f46e5; margin-top: 15px; }
+        .btn-copy:hover { background: #4338ca; }
+        
+        .result-box { margin-top: 30px; padding: 20px; background: #f0fdf4; border-radius: 12px; border-left: 5px solid var(--primary); display: none; }
+        .result-item { margin-bottom: 12px; font-size: 14px; display: flex; justify-content: space-between; border-bottom: 1px dashed #a7f3d0; padding-bottom: 8px; align-items: center; }
+        .result-item:last-child { border-bottom: none; }
+        .result-item .label-box { display: flex; flex-direction: column; }
+        .result-item span.label { color: #4b5563; font-weight: 600; }
+        .result-item span.label-en { color: #9ca3af; font-size: 12px; }
+        .result-item span.value { font-weight: 600; color: #111827; text-align: right; max-width: 50%; word-break: break-word; }
+        
+        .dst-alert { background: #fffbeb; color: #b45309; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; border: 1px solid #fde68a; display: none; line-height: 1.5; }
+        .dst-alert strong { color: #d97706; display: block; margin-bottom: 4px; }
+
+        .main-result { background: #fff; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 2px solid #34d399; }
+        .main-result .title { font-size: 16px; color: #059669; font-weight: bold; }
+        .main-result .title-en { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+        .main-result .time { font-size: 32px; font-weight: 900; color: #064e3b; font-family: monospace; }
+        
+        #loading { text-align: center; color: #6b7280; font-size: 14px; margin-top: 15px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🌍 真太阳时精准计算器</h1>
+    <div class="subtitle">Global True Solar Time Calculator</div>
+    
+    <div class="form-group">
+        <label>出生日期 <span class="en-label">/ Date of Birth</span></label>
+        <input type="date" id="birthDate" required>
+    </div>
+    
+    <div class="form-group">
+        <label>出生钟表时间 (当地时间) <span class="en-label">/ Birth Clock Time (Local Time)</span></label>
+        <input type="time" id="birthTime" required>
+    </div>
+
+    <div class="form-group">
+        <label>出生地点 (城市名、拼音 或 邮编) <span class="en-label">/ Birthplace (City name, Pinyin or ZIP)</span></label>
+        <input type="text" id="locationQuery" placeholder="例如: Beijing, 纽约, 或法国邮编 75001" required>
+    </div>
+
+    <button id="calcBtn" onclick="calculate()">计算天文真太阳时 / Calculate</button>
+    <div id="loading">正在连接全球地理数据库查询... / Connecting to global database...</div>
+
+    <div id="result" class="result-box">
+        <div id="dstAlert" class="dst-alert">
+            <strong>⚠️ 夏令时调整说明 / DST Adjustment Notice：</strong> 
+            经系统查询，该出生时刻当地正在实行夏令时。为保证计算精度，系统已自动<b>扣除了 1 小时</b>的夏令时偏差。
+            <br><span style="color:#92400e; font-size:12px;">The system detected DST was active. 1 hour has been automatically deducted for astronomical accuracy.</span>
+        </div>
+
+        <div class="result-item">
+            <div class="label-box"><span class="label">识别到的地点</span><span class="label-en">Recognized Location</span></div>
+            <span class="value" id="resLocation"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">所在时区</span><span class="label-en">Timezone</span></div>
+            <span class="value" id="resTz"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">地理经度</span><span class="label-en">Longitude</span></div>
+            <span class="value" id="resLng"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">是否实行夏令时</span><span class="label-en">Is DST Active</span></div>
+            <span class="value" id="resDst"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">1. 世界标准时间</span><span class="label-en">Universal Time (UTC)</span></div>
+            <span class="value" id="resUtc"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">2. 平太阳时</span><span class="label-en">Local Mean Time (LMT)</span></div>
+            <span class="value" id="resLmt"></span>
+        </div>
+        <div class="result-item">
+            <div class="label-box"><span class="label">3. 天文均时差</span><span class="label-en">Equation of Time (EoT)</span></div>
+            <span class="value" id="resEot"></span>
+        </div>
+        
+        <div class="main-result">
+            <div class="title">最终结果：真太阳时</div>
+            <div class="title-en">Final Result: True Solar Time (TST)</div>
+            <div class="time" id="resTst"></div>
+        </div>
+
+        <button id="copyBtn" class="btn-copy" onclick="copyResults()">📋 一键复制结果 / Copy Results</button>
+    </div>
+</div>
+
+<script>
+    const DateTime = luxon.DateTime;
+    let rawResultData = {}; // 存储用于复制的纯文本数据
+
+    async function calculate() {
+        const dateStr = document.getElementById('birthDate').value;
+        const timeStr = document.getElementById('birthTime').value;
+        const locationStr = document.getElementById('locationQuery').value.trim();
+
+        if(!dateStr || !timeStr || !locationStr) {
+            alert("请完整填写所有信息 / Please fill in all fields!");
+            return;
+        }
+
+        const btn = document.getElementById('calcBtn');
+        const loading = document.getElementById('loading');
+        const resultBox = document.getElementById('result');
+        const dstAlert = document.getElementById('dstAlert');
+
+        btn.disabled = true;
+        loading.style.display = 'block';
+        resultBox.style.display = 'none';
+        dstAlert.style.display = 'none';
+
+        try {
+            // 1. 调用 Open-Meteo API 获取经纬度与时区
+            const apiUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationStr)}&count=1&language=zh`;
+            const response = await fetch(apiUrl);
+            const geoData = await response.json();
+
+            if (!geoData.results || geoData.results.length === 0) {
+                throw new Error("无法识别地点，请尝试拼音或大城市名 / Location not found, try Pinyin or major city.");
+            }
+
+            const locationInfo = geoData.results[0];
+            const timezone = locationInfo.timezone;
+            const longitude = locationInfo.longitude;
+            const displayName = `${locationInfo.name}${locationInfo.admin1 ? ', ' + locationInfo.admin1 : ''} (${locationInfo.country})`;
+
+            if (!timezone) throw new Error("缺乏时区数据，请尝试大城市 / Timezone missing, try a major city.");
+
+            // 2. 构建出生当地时间
+            const localDt = DateTime.fromISO(`${dateStr}T${timeStr}`, { zone: timezone });
+            if (!localDt.isValid) throw new Error("无效的日期或时间 / Invalid date or time");
+
+            // 3. 转换 UTC
+            const utcDt = localDt.toUTC();
+
+            // 4. 计算 LMT
+            const lmtDt = utcDt.plus({ minutes: longitude * 4 });
+
+            // 5. 计算 EoT (Spencer 1971)
+            const d = localDt.ordinal;
+            const gamma = (2 * Math.PI / 365) * (d - 1);
+            const eot = 229.18 * (0.000075 
+                        + 0.001868 * Math.cos(gamma) 
+                        - 0.032077 * Math.sin(gamma) 
+                        - 0.014615 * Math.cos(2 * gamma) 
+                        - 0.040849 * Math.sin(2 * gamma));
+
+            // 6. 得出 TST
+            const tstDt = lmtDt.plus({ minutes: eot });
+
+            // 7. 渲染到界面并保存纯文本数据
+            const dstStatus = localDt.isInDST ? "是 / Yes (已扣除/Deducted)" : "否 / No";
+            const eotStr = `${eot > 0 ? '+' : ''}${eot.toFixed(2)} 分钟(mins)`;
+
+            document.getElementById('resLocation').innerText = displayName;
+            document.getElementById('resTz').innerText = timezone;
+            document.getElementById('resLng').innerText = longitude.toFixed(4) + "°";
+            document.getElementById('resDst').innerHTML = localDt.isInDST ? `<span style="color:#b45309;">${dstStatus}</span>` : dstStatus;
+            document.getElementById('resUtc').innerText = utcDt.toFormat("yyyy-MM-dd HH:mm:ss");
+            document.getElementById('resLmt').innerText = lmtDt.toFormat("yyyy-MM-dd HH:mm:ss");
+            document.getElementById('resEot').innerText = eotStr;
+            document.getElementById('resTst').innerText = tstDt.toFormat("yyyy-MM-dd HH:mm:ss");
+
+            if (localDt.isInDST) dstAlert.style.display = 'block';
+            resultBox.style.display = 'block';
+
+            // 构建复制用的排版文本
+            rawResultData = {
+                loc: displayName, tz: timezone, lng: longitude.toFixed(4) + "°",
+                dst: dstStatus, utc: utcDt.toFormat("yyyy-MM-dd HH:mm:ss"),
+                lmt: lmtDt.toFormat("yyyy-MM-dd HH:mm:ss"), eot: eotStr,
+                tst: tstDt.toFormat("yyyy-MM-dd HH:mm:ss")
+            };
+
+        } catch (error) {
+            alert("计算失败 / Error: " + error.message);
+        } finally {
+            btn.disabled = false;
+            loading.style.display = 'none';
+        }
+    }
+
+    function copyResults() {
+        if (!rawResultData.tst) return;
+        
+        const copyText = `🌍 真太阳时计算结果 / True Solar Time
+------------------------------------
+📍 地点 / Location: ${rawResultData.loc}
+🌐 时区 / Timezone: ${rawResultData.tz}
+🗺️ 经度 / Longitude: ${rawResultData.lng}
+⏰ 夏令时 / DST Active: ${rawResultData.dst}
+🌍 标准时间 / UTC: ${rawResultData.utc}
+⏳ 平太阳时 / LMT: ${rawResultData.lmt}
+⚖️ 均时差 / EoT: ${rawResultData.eot}
+------------------------------------
+🌞 真太阳时 / TST: ${rawResultData.tst}`;
+
+        navigator.clipboard.writeText(copyText).then(() => {
+            const copyBtn = document.getElementById('copyBtn');
+            const originalText = copyBtn.innerText;
+            copyBtn.innerText = "✅ 已复制 / Copied Successfully!";
+            copyBtn.style.backgroundColor = "#059669"; // 变成绿色
+            
+            setTimeout(() => {
+                copyBtn.innerText = originalText;
+                copyBtn.style.backgroundColor = ""; // 恢复原色
+            }, 2000);
+        }).catch(err => {
+            alert("复制失败，请手动选择复制 / Copy failed: " + err);
+        });
+    }
+</script>
+</body>
+</html>
